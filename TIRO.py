@@ -4,6 +4,7 @@ import numpy as np
 import scipy as sp
 from scipy.integrate import solve_ivp
 from scipy.special import gammainc, gamma
+from scipy import constants
 
 class Model(object):
 
@@ -104,12 +105,30 @@ class Model(object):
         gradient_x = np.gradient(psi_x)
         tidal_radius = np.interp(0,gradient_x,sol.t)
         print("The tidal radius is " + str(tidal_radius))
+        
+    def cut_off(self,sol):
+        """" obtains first-order expansion of aH₀ """
+        r_trunc = sol.t_events[0][0]
+        alpha_zero = r_trunc*sol.y_events[0][0][1]
+        T_zero_zero = -3*m.sqrt(m.pi)*(self.param[3]-1)*(r_trunc**2)
+        C_zero_zero = -6*m.sqrt(m.pi)*(r_trunc**2)
+        alpha_one = sol.y_events[0][0][2] + (sol.y_events[0][0][3]*r_trunc) + 3*(T_zero_zero+(self.param[2]*C_zero_zero))/(2*m.sqrt(m.pi))
+        aH_0 = alpha_zero + (alpha_one*self.param[1])
+        return aH_0
+
+    def king_radius(self,sol,A,a):
+        """ finds the central density and King radius """
+        aH_0 = self.cut_off(sol)
+        rho_0 = (8*m.sqrt(2)*m.pi*A/(3*(a**(3/2))))*np.exp(-aH_0)*np.exp(self.param[0])*self.gamma(5/2,self.param[0])
+        r_0 = m.sqrt(9/(4*m.pi*a*constants.G*rho_0))
+        print("The central density is " + str(rho_0))
+        print("The King radius is " + str(r_0))
 
 if __name__ == "__main__":
 
     args = sys.argv
-    if (len(args) != 7):
-        print("Usage Python3 Model.py concentration epsilon zeta nu theta phi")
+    if (len(args) != 9):
+        print("Usage Python3 Model.py concentration epsilon zeta nu theta phi A a")
         sys.exit(1)
     concentration = float(args[1])
     epsilon = float(args[2])
@@ -117,12 +136,20 @@ if __name__ == "__main__":
     nu = float(args[4])
     theta = m.radians(float(args[5]))
     phi = m.radians(float(args[6]))
+    scale_A = float(args[7])
+    scale_a = float(args[8])
 
     model = Model(concentration,epsilon,zeta,nu)
     solution = model.integrate()
+    
     psi = model.internal_solution(solution,theta,phi)
-
     rho,sigma = model.profiles(psi)
+    fileout = open("TIRO.txt","w")
+    fileout.write(str(concentration)+ " " + str(epsilon) + " " + str(zeta) + " " + str(nu) + " " + str(theta) + " " + str(phi) + "\n" + "\n")
+    for i in range(0,len(psi)):
+        fileout.write(str(solution.t[i]) + " " + str(psi[i]) + " " + str(rho[i]) + " " + str(sigma[i]) + "\n")
+    fileout.close()
 
     psi_x = model.internal_solution(solution,m.pi/2,0)
     model.tidal_radius(psi_x,solution)
+    model.king_radius(solution,scale_A,scale_a)
