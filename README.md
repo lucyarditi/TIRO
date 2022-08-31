@@ -1,4 +1,4 @@
-# TIRO
+# The TIRO Code
 
 ## Overview
 
