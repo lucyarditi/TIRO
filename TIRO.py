@@ -148,10 +148,6 @@ class Model(object):
         """ returns the velocity dispersion profile for a given potential profile """
         np.seterr(invalid='ignore')
         return np.sqrt((2/5)*self.gamma(7/2,potential)/self.gamma(5/2,potential))
-    
-    def profiles(self):
-        """ plots dimensionless density and velocity dispersion profiles along Cartesian axes """
-
 
 
 if __name__ == "__main__":
@@ -207,9 +203,10 @@ if __name__ == "__main__":
     line_x, = plt.plot(r,density_x/rho_zero,'blue',label=r'$\hat{x}$')
     line_k, = plt.plot(r_k,density_k/rho_zero,'k--',label="King")
     
+    print(np.nonzero(density_x)[0][-1])
     plt.yscale('log')
     plt.ylim(10**(-6),2)
-    plt.xlim(0,)
+    plt.xlim(0,r[np.nonzero(density_x)[0][-1]])
     plt.legend(handles=[line_x,line_y,line_z,line_k],frameon=False,fontsize='medium')
     plt.ylabel(r'$\hat{\rho}/\hat{\rho}_0$',labelpad = 4,fontsize = 'x-large')
     plt.xlabel(r'$\hat{r}$',labelpad = 4,fontsize = 'x-large')
