@@ -6,7 +6,6 @@ from scipy.optimize import brentq
 from scipy.special import gammainc, gamma
 from scipy import constants
 import matplotlib.pyplot as plt
-np.seterr(divide='ignore', invalid='ignore')
 
 class Model(object):
 
@@ -148,6 +147,7 @@ class Model(object):
     
     def velocity_dispersion(self,potential):
         """ returns the velocity dispersion profile for a given potential profile """
+        np.seterr(invalid='ignore')
         return np.sqrt((2/5)*self.gamma(7/2,potential)/self.gamma(5/2,potential))
     
     def profiles(self):
