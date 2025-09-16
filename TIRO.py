@@ -59,7 +59,7 @@ class Model(object):
                         events=(self.truncation_radius), #finds r at which ψ0=0
                         dense_output=True #interpolates to output continuous solution
                         )
-        print(self.sol.message)
+        #print(self.sol.message)
         self.r_trunc = self.sol.t_events[0][0] #truncation radius
     
     def internal_solution(self,r,theta,phi):
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
     args = sys.argv
     if (len(args) != 5):
-        print("Usage Python3 TIRO.py concentration tidal_strength asynchronicity galaxy_coefficient")
+        print("Usage python TIRO.py concentration tidal_strength asynchronicity galaxy_coefficient")
         sys.exit(1)
     psi = float(args[1]) #concentration
     epsilon = float(args[2]) #tidal strength parameter
