@@ -14,10 +14,8 @@ class Model(object):
         self.param = np.array(parameters)
         self.range = (10**-6,200)
 
-        self.r = np.linspace(self.range[0],100,10**7)  #dimensionless radii at which solution will be recorded
-
-        """ central boundary conditions, corrected using Frobenius """
-        self.y0 = np.zeros(6) #array for storing initial conditions, corrected via frobenius method
+        """ central boundary conditions, corrected via Frobenius """
+        self.y0 = np.zeros(6)
         self.y0[0] = self.param[0]-((3/2)*(self.range[0]**2))                      #ψ0(0)
         self.y0[1] = (-3)*self.range[0]                                            #ψ0'(0)
         self.y0[2] = (-3/2)*(1-self.param[3]-(2*self.param[2]))*(self.range[0]**2) #f00(0)
@@ -127,7 +125,7 @@ class Model(object):
         return np.array([C_zero_zero,C_two_zero])
 
     def tidal_radius(self):
-        """ locates the tidal radius (zero of self.external_gradient along x-axis) """
+        """ locates the tidal radius """
         r_tidal = brentq(self.external_gradient,self.r_trunc,self.range[1],args=(np.pi/2,0))
         return r_tidal
     
@@ -152,7 +150,7 @@ class Model(object):
         return self.global_solution(r,theta,phi) - potential
     
     def density(self,potential):
-        """ returns the density prfile for a given potential profile """
+        """ returns the density profile for a given potential profile """
         return np.exp(potential)*self.gamma(5/2,potential)
     
     def velocity_dispersion(self,potential):
