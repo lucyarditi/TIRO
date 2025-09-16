@@ -170,7 +170,6 @@ if __name__ == "__main__":
     zeta = float(args[3]) #asynchronicity parameter
     nu = float(args[4]) #galactic potential coefficient
 
-
     """ Run Poisson Solver """
 
     model = Model([psi,epsilon,zeta,nu])
@@ -213,7 +212,7 @@ if __name__ == "__main__":
     
     plt.yscale('log')
     plt.ylim(10**(-6),2)
-    plt.xlim(0,r[np.nonzero(density_x)[0][-1]])
+    plt.xlim(0,np.ceil(r[np.nonzero((density_x/rho_zero)>10**-6)[0][-1]]))
     plt.legend(handles=[line_x,line_y,line_z,line_k],frameon=False,fontsize='medium')
     plt.ylabel(r'$\hat{\rho}/\hat{\rho}_0$',labelpad = 4,fontsize = 'x-large')
     plt.xlabel(r'$\hat{r}$',labelpad = 4,fontsize = 'x-large')
@@ -313,8 +312,10 @@ if __name__ == "__main__":
     axes_lim = np.ceil(r_tidal+0.5)
     if axes_lim < 14:
         major_locator = 2
-    else:
+    elif axes_lim < 30:
         major_locator = 5
+    else:
+        major_locator = 10
 
     #plotting xy slice
     
