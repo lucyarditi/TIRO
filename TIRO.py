@@ -2,9 +2,11 @@ import sys
 import numpy as np
 import scipy as sp
 from scipy.integrate import solve_ivp
-from scipy.optimize import brentq
+from scipy.optimize import brentq, fsolve
 from scipy.special import gammainc, gamma
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+np.seterr(invalid='ignore',divide='ignore')
 
 class Model(object):
 
@@ -140,15 +142,22 @@ class Model(object):
         gradient = gradient_zero + (gradient_one*self.param[1])
         return gradient
     
+    def boundary(self,theta,phi):
+        """ locates the cluster boundary """
+        r_bound = fsolve(self.global_solution,self.r_trunc,args=(theta,phi))[0]
+        return r_bound
+    
+    def equipotential(self,r,theta,phi,potential):
+        """ method used to locate equipotential surfaces """
+        return self.global_solution(r,theta,phi) - potential
+    
     def density(self,potential):
         """ returns the density prfile for a given potential profile """
         return np.exp(potential)*self.gamma(5/2,potential)
     
     def velocity_dispersion(self,potential):
         """ returns the velocity dispersion profile for a given potential profile """
-        np.seterr(invalid='ignore')
         return np.sqrt((2/5)*self.gamma(7/2,potential)/self.gamma(5/2,potential))
-
 
 if __name__ == "__main__":
 
@@ -203,7 +212,6 @@ if __name__ == "__main__":
     line_x, = plt.plot(r,density_x/rho_zero,'blue',label=r'$\hat{x}$')
     line_k, = plt.plot(r_k,density_k/rho_zero,'k--',label="King")
     
-    print(np.nonzero(density_x)[0][-1])
     plt.yscale('log')
     plt.ylim(10**(-6),2)
     plt.xlim(0,r[np.nonzero(density_x)[0][-1]])
@@ -257,4 +265,164 @@ if __name__ == "__main__":
     axr.tick_params(which = 'minor', length = 4)
     axr.minorticks_on()
 
+    plt.show()
+
+    # plots slices through equipotentials
+
+    potentials = np.array([0.0025,0.0125,0.025,0.05,0.125,0.25,0.5,0.75])*model.param[0] #ADD CRITICAL SURFACE #SAVE FIGS
+    
+    thetas = np.linspace(0,np.pi,1000)
+    phis = np.linspace(0,2*np.pi,2000)
+
+    boundary_xy = np.array(list(map(model.boundary,np.full_like(phis,np.pi/2),phis)))
+    radii_xy = np.zeros((len(phis),len(potentials)))
+    for i,p in enumerate(potentials):
+        radii_xy[0,i] = brentq(model.equipotential,10**-6,boundary_xy[0],args=(np.pi/2,phis[0],p))
+    for j,ph in enumerate(phis[1:]):
+        for i,p in enumerate(potentials):
+            radii_xy[j+1,i] = fsolve(model.equipotential,radii_xy[j,i],args=(np.pi/2,ph,p))[0]
+
+    theta_input = np.concatenate((thetas,np.flipud(thetas)[1:-1]))
+    phi_input = np.concatenate((np.zeros_like(thetas),np.full_like(thetas,np.pi)[1:-1]))
+    boundary_xz = np.array(list(map(model.boundary,theta_input,phi_input)))
+    radii_xz = np.zeros((len(theta_input),len(potentials)))
+    for i,p in enumerate(potentials):
+        radii_xz[0,i] = brentq(model.equipotential,10**-6,boundary_xz[0],args=(theta_input[0],0,p))
+    for j,t in enumerate(theta_input[1:]):
+        for i,p in enumerate(potentials):
+            radii_xz[j+1,i] = fsolve(model.equipotential,radii_xz[j,i],args=(t,phi_input[j+1],p))[0]
+
+    phi_input_y = np.concatenate((np.full_like(thetas,np.pi/2),np.full_like(thetas,3*np.pi/2)[1:-1]))
+    boundary_yz = np.array(list(map(model.boundary,theta_input,phi_input_y)))
+    radii_yz = np.zeros((len(theta_input),len(potentials)))
+    for i,p in enumerate(potentials):
+        radii_yz[0,i] = brentq(model.equipotential,10**-6,boundary_yz[0],args=(theta_input[0],np.pi/2,p))
+    for j,t in enumerate(theta_input[1:]):
+        for i,p in enumerate(potentials):
+            radii_yz[j+1,i] = fsolve(model.equipotential,radii_yz[j,i],args=(t,phi_input_y[j+1],p))[0]
+
+    fig, axes = plt.subplots(1,3,figsize=(15, 5))
+    if model.tidal_radius() < 15:
+        major_locator = 2
+    else:
+        major_locator = 5
+
+    #plotting xy slice
+    
+    x_boundary = np.multiply(boundary_xy,np.cos(phis))
+    y_boundary = np.multiply(boundary_xy,np.sin(phis))
+    x = np.multiply(radii_xy,np.cos(phis[:,np.newaxis]))
+    y = np.multiply(radii_xy,np.sin(phis[:,np.newaxis]))
+
+    axes[0].plot(x_boundary,y_boundary,'k')
+    for i in range(len(potentials)):
+        axes[0].plot(x[:,i],y[:,i],'k')
+
+    axes[0].set_ylabel(r'$\hat{y}$',labelpad = 4,fontsize = 'x-large',rotation=0)
+    axes[0].set_xlabel(r'$\hat{x}$',labelpad = 4,fontsize = 'x-large')
+    secax0 = axes[0].twiny()
+    axt0 = secax0.xaxis
+    secay0 = axes[0].twinx()
+    axr0 = secay0.yaxis
+    axes[0].set_box_aspect(1)
+    axes[0].set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))   #AUTOMATE THIS
+    axes[0].set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))  
+    secax0.set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    secay0.set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    axes[0].yaxis.set_major_locator(MultipleLocator(major_locator))
+    axes[0].xaxis.set_major_locator(MultipleLocator(major_locator))
+    axt0.set_major_locator(MultipleLocator(major_locator))
+    axr0.set_major_locator(MultipleLocator(major_locator))
+    axes[0].minorticks_on()
+    axes[0].tick_params(which = 'both',direction='in') #inward pointing ticks
+    axes[0].tick_params(length = 6)   #sets length of ticks
+    axes[0].tick_params(which = 'minor', length = 4)
+    axt0.minorticks_on()
+    axt0.set_tick_params(which = 'both',direction='in',labelcolor='none') #no tick label
+    axt0.set_tick_params(length = 6)
+    axt0.set_tick_params(which = 'minor', length = 4)
+    axr0.minorticks_on()
+    axr0.set_tick_params(which = 'both',direction='in',labelcolor='none')
+    axr0.set_tick_params(length = 6)
+    axr0.set_tick_params(which = 'minor', length = 4)
+
+    #plotting xz slice
+
+    x_boundary = np.multiply(boundary_xz,np.multiply(np.sin(theta_input),np.cos(phi_input)))
+    z_boundary = np.multiply(boundary_xz,np.cos(theta_input))
+    x = np.multiply(radii_xz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.cos(phi_input[:,np.newaxis]))) #multiplies each column in radii by thetas (Reshaped by np.newaxis)
+    z = np.multiply(radii_xz,np.cos(theta_input[:,np.newaxis]))
+
+    axes[1].plot(x_boundary,z_boundary,'k')
+    for i in range(len(potentials)):
+        axes[1].plot(x[:,i],z[:,i],'k')
+
+    axes[1].set_ylabel(r'$\hat{z}$',labelpad = 4,fontsize = 'x-large',rotation=0)
+    axes[1].set_xlabel(r'$\hat{x}$',labelpad = 4,fontsize = 'x-large')
+    secax1 = axes[1].twiny()
+    axt1 = secax1.xaxis
+    secay1 = axes[1].twinx()
+    axr1 = secay1.yaxis
+    axes[1].set_box_aspect(1)
+    axes[1].set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    axes[1].set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))  
+    secax1.set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    secay1.set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    axes[1].yaxis.set_major_locator(MultipleLocator(major_locator))
+    axes[1].xaxis.set_major_locator(MultipleLocator(major_locator))
+    axt1.set_major_locator(MultipleLocator(major_locator))
+    axr1.set_major_locator(MultipleLocator(major_locator))
+    axes[1].minorticks_on()
+    axes[1].tick_params(which = 'both',direction='in') #inward pointing ticks
+    axes[1].tick_params(length = 6)   #sets length of ticks
+    axes[1].tick_params(which = 'minor', length = 4)
+    axt1.minorticks_on()
+    axt1.set_tick_params(which = 'both',direction='in',labelcolor='none') #no tick label
+    axt1.set_tick_params(length = 6)
+    axt1.set_tick_params(which = 'minor', length = 4)
+    axr1.minorticks_on()
+    axr1.set_tick_params(which = 'both',direction='in',labelcolor='none')
+    axr1.set_tick_params(length = 6)
+    axr1.set_tick_params(which = 'minor', length = 4)
+
+    #plotting yz slice
+
+    y_boundary = np.multiply(boundary_yz,np.multiply(np.sin(theta_input),np.sin(phi_input_y)))
+    z_boundary = np.multiply(boundary_yz,np.cos(theta_input))
+    y = np.multiply(radii_yz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.sin(phi_input_y[:,np.newaxis]))) #multiplies each column in radii by thetas (Reshaped by np.newaxis)
+    z = np.multiply(radii_yz,np.cos(theta_input[:,np.newaxis]))
+
+    axes[2].plot(y_boundary,z_boundary,'k')
+    for i in range(len(potentials)):
+        axes[2].plot(y[:,i],z[:,i],'k')
+    
+    axes[2].set_ylabel(r'$\hat{z}$',labelpad = 4,fontsize = 'x-large',rotation=0)
+    axes[2].set_xlabel(r'$\hat{y}$',labelpad = 4,fontsize = 'x-large')
+    secax2 = axes[2].twiny()
+    axt2 = secax2.xaxis
+    secay2 = axes[2].twinx()
+    axr2 = secay2.yaxis
+    axes[2].set_box_aspect(1)
+    axes[2].set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))   #AUTOMATE THIS
+    axes[2].set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))  
+    secax2.set_xlim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    secay2.set_ylim(-np.ceil(model.tidal_radius()),np.ceil(model.tidal_radius()))
+    axes[2].yaxis.set_major_locator(MultipleLocator(major_locator))
+    axes[2].xaxis.set_major_locator(MultipleLocator(major_locator))
+    axt2.set_major_locator(MultipleLocator(major_locator))
+    axr2.set_major_locator(MultipleLocator(major_locator))
+    axes[2].minorticks_on()
+    axes[2].tick_params(which = 'both',direction='in') #inward pointing ticks
+    axes[2].tick_params(length = 6)   #sets length of ticks
+    axes[2].tick_params(which = 'minor', length = 4)
+    axt2.minorticks_on()
+    axt2.set_tick_params(which = 'both',direction='in',labelcolor='none') #no tick label
+    axt2.set_tick_params(length = 6)
+    axt2.set_tick_params(which = 'minor', length = 4)
+    axr2.minorticks_on()
+    axr2.set_tick_params(which = 'both',direction='in',labelcolor='none')
+    axr2.set_tick_params(length = 6)
+    axr2.set_tick_params(which = 'minor', length = 4)
+   
+    plt.tight_layout()
     plt.show()
