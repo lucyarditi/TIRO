@@ -27,6 +27,15 @@ def little_a(r0,K):
 def big_a(r0,M):
     return 1/(M*(r0**3))
 
+def rescaled_density(rho,A):
+    return rho*A
+
+def rescaled_velocity_dispersion(sigma,a):
+    return np.sqrt(np.square(sigma)/a)
+
+def rescaled_length(r,r0):
+    return r*r0
+
 if __name__ == "__main__":
 
     """ Parameters """
@@ -48,17 +57,15 @@ if __name__ == "__main__":
 
     M = total_mass(r_tidal)[0]
     K = kinetic_energy(r_tidal)[0]
+
     r0 = king_radius(M,K)
     a = little_a(r0,K)
     A = big_a(r0,M)
 
-    print("The truncation radius is " + str(model.r_trunc*r0))
-    print("The tidal radius is " + str(r_tidal*r0))
-    print("The central density is " + str(model.density(model.param[0])*A))
-    print("The central velocity dispersion is " + str(model.velocity_dispersion(model.param[0])/a))
-
-    #print("The central density is " + str(np.format_float_scientific(model.density(model.param[0])*A,precision=2)))
-    #print("The central velocity dispersion is " + str(np.format_float_scientific(model.velocity_dispersion(model.param[0])/a,precision=2)))
+    print("The truncation radius is " + str(np.round(rescaled_length(model.r_trunc,r0),decimals=2)))
+    print("The tidal radius is " + str(np.round(rescaled_length(r_tidal,r0),decimals=2)))
+    print("The central density is " + str(np.round(rescaled_density(model.density(model.param[0]),A),decimals=2)))
+    print("The central velocity dispersion is " + str(np.round(rescaled_velocity_dispersion(model.velocity_dispersion(model.param[0]),a),decimals=2)))
 
     """ Plotting """
 
@@ -84,15 +91,17 @@ if __name__ == "__main__":
     #plots normalised density profiles
 
     rho_zero = model.density(model.param[0]) #central dimensionless density
+    r = rescaled_length(r,r0)
+    r_k = rescaled_length(r_k,r0)
 
-    line_z, = plt.plot(r*r0,density_z/rho_zero,'deeppink',label=r'$z$')
-    line_y, = plt.plot(r*r0,density_y/rho_zero,'forestgreen',label=r'$y$')
-    line_x, = plt.plot(r*r0,density_x/rho_zero,'blue',label=r'$x$')
-    line_k, = plt.plot(r_k*r0,density_k/rho_zero,'k--',label="King")
+    line_z, = plt.plot(r,density_z/rho_zero,'deeppink',label=r'$z$')
+    line_y, = plt.plot(r,density_y/rho_zero,'forestgreen',label=r'$y$')
+    line_x, = plt.plot(r,density_x/rho_zero,'blue',label=r'$x$')
+    line_k, = plt.plot(r_k,density_k/rho_zero,'k--',label="King")
     
     plt.yscale('log')
     plt.ylim(10**(-6),2)
-    plt.xlim(0,np.ceil(r[np.nonzero((density_x/rho_zero)>10**-6)[0][-1]])*r0)
+    plt.xlim(0,np.ceil(r[np.nonzero((density_x/rho_zero)>10**-6)[0][-1]]*10)/10)
     plt.legend(handles=[line_x,line_y,line_z,line_k],frameon=False,fontsize='medium')
     plt.ylabel(r'$\rho/\rho_0$',labelpad = 4,fontsize = 'x-large')
     plt.xlabel(r'$r$',labelpad = 4,fontsize = 'x-large')
@@ -118,10 +127,10 @@ if __name__ == "__main__":
 
     sigma_zero = model.velocity_dispersion(model.param[0]) #central dimensionless velocity dispersion
 
-    line_z, = plt.plot(r*r0,dispersion_z/sigma_zero,'deeppink',label=r'$z$')
-    line_y, = plt.plot(r*r0,dispersion_y/sigma_zero,'forestgreen',label=r'$y$')
-    line_x, = plt.plot(r*r0,dispersion_x/sigma_zero,'blue',label=r'$x$')
-    line_k, = plt.plot(r_k*r0,dispersion_k/sigma_zero,'k--',label="King")
+    line_z, = plt.plot(r,dispersion_z/sigma_zero,'deeppink',label=r'$z$')
+    line_y, = plt.plot(r,dispersion_y/sigma_zero,'forestgreen',label=r'$y$')
+    line_x, = plt.plot(r,dispersion_x/sigma_zero,'blue',label=r'$x$')
+    line_k, = plt.plot(r_k,dispersion_k/sigma_zero,'k--',label="King")
 
     plt.ylim(0,1.05)
     plt.xlim(0,)
@@ -189,20 +198,25 @@ if __name__ == "__main__":
         radii_yz[j+1,-1] = fsolve(model.equipotential,radii_yz[j,-1],args=(t,phi_input_y[j+1],critical_potential))[0]
 
     fig, axes = plt.subplots(1,3,figsize=(15, 5))
-    axes_lim = np.ceil(r_tidal+0.5)*r0
-    major_locator = 0.2
+    axes_lim = rescaled_length(np.ceil(r_tidal+0.5),r0)
+    if axes_lim < 1.4:
+        major_locator = 0.2
+    elif axes_lim < 3:
+        major_locator = 0.5
+    else:
+        major_locator = 1
 
     #plotting xy slice
     
-    x_boundary = np.multiply(boundary_xy,np.cos(phis))*r0
-    y_boundary = np.multiply(boundary_xy,np.sin(phis))*r0
-    x = np.multiply(radii_xy,np.cos(phis[:,np.newaxis]))*r0
-    y = np.multiply(radii_xy,np.sin(phis[:,np.newaxis]))*r0
+    x_boundary = rescaled_length(np.multiply(boundary_xy,np.cos(phis)),r0)
+    y_boundary = rescaled_length(np.multiply(boundary_xy,np.sin(phis)),r0)
+    x = rescaled_length(np.multiply(radii_xy,np.cos(phis[:,np.newaxis])),r0)
+    y = rescaled_length(np.multiply(radii_xy,np.sin(phis[:,np.newaxis])),r0)
 
     axes[0].plot(x_boundary,y_boundary,'k')
     for i in range(len(potentials)):
         axes[0].plot(x[:,i],y[:,i],'k')
-    if (r_tidal-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[0].plot(x[:,-1],y[:,-1],'k:',dashes=[1,1.7])
 
     axes[0].set_ylabel(r'$y$',labelpad = 4,fontsize = 'x-large',rotation=0)
@@ -235,15 +249,15 @@ if __name__ == "__main__":
 
     #plotting xz slice
 
-    x_boundary = np.multiply(boundary_xz,np.multiply(np.sin(theta_input),np.cos(phi_input)))*r0
-    z_boundary = np.multiply(boundary_xz,np.cos(theta_input))*r0
-    x = np.multiply(radii_xz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.cos(phi_input[:,np.newaxis])))*r0 #multiplies each column in radii by thetas (Reshaped by np.newaxis)
-    z = np.multiply(radii_xz,np.cos(theta_input[:,np.newaxis]))*r0
+    x_boundary = rescaled_length(np.multiply(boundary_xz,np.multiply(np.sin(theta_input),np.cos(phi_input))),r0)
+    z_boundary = rescaled_length(np.multiply(boundary_xz,np.cos(theta_input)),r0)
+    x = rescaled_length(np.multiply(radii_xz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.cos(phi_input[:,np.newaxis]))),r0) #multiplies each column in radii by thetas (Reshaped by np.newaxis)
+    z = rescaled_length(np.multiply(radii_xz,np.cos(theta_input[:,np.newaxis])),r0)
 
     axes[1].plot(x_boundary,z_boundary,'k')
     for i in range(len(potentials)):
         axes[1].plot(x[:,i],z[:,i],'k')
-    if (r_tidal-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[1].plot(x[:,-1],z[:,-1],'k:',dashes=[1,1.7])
 
     axes[1].set_ylabel(r'$z$',labelpad = 4,fontsize = 'x-large',rotation=0)
@@ -276,15 +290,15 @@ if __name__ == "__main__":
 
     #plotting yz slice
 
-    y_boundary = np.multiply(boundary_yz,np.multiply(np.sin(theta_input),np.sin(phi_input_y)))*r0
-    z_boundary = np.multiply(boundary_yz,np.cos(theta_input))*r0
-    y = np.multiply(radii_yz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.sin(phi_input_y[:,np.newaxis])))*r0
-    z = np.multiply(radii_yz,np.cos(theta_input[:,np.newaxis]))*r0
+    y_boundary = rescaled_length(np.multiply(boundary_yz,np.multiply(np.sin(theta_input),np.sin(phi_input_y))),r0)
+    z_boundary =rescaled_length(np.multiply(boundary_yz,np.cos(theta_input)),r0)
+    y = rescaled_length(np.multiply(radii_yz,np.multiply(np.sin(theta_input[:,np.newaxis]),np.sin(phi_input_y[:,np.newaxis]))),r0)
+    z = rescaled_length(np.multiply(radii_yz,np.cos(theta_input[:,np.newaxis])),r0)
 
     axes[2].plot(y_boundary,z_boundary,'k')
     for i in range(len(potentials)):
         axes[2].plot(y[:,i],z[:,i],'k')
-    if (r_tidal-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[2].plot(y[:,-1],z[:,-1],'k:',dashes=[1,1.7])
     
     axes[2].set_ylabel(r'$z$',labelpad = 4,fontsize = 'x-large',rotation=0)
