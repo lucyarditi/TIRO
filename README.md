@@ -10,4 +10,4 @@ To reproduce Figures 3, 4, 6 and 7, execute the following: \
 
 The module Critical.py finds the critical value of the tidal strength parameter $\epsilon_{cr}$ for inputted values of $\Psi$, $\zeta$ and $\nu$.
 
-The module NBody.py takes the same inputs as TIRO.py and converts outputs into N-Body (Hénon) units. The module Physical_Units.py takes two additional inputs from: central density (in $M_\odot/pc^3$), central velocity dispersion (in $km/s$) and total mass (in $M_\odot$). Scale factors $a$, $A$ and $r_0$ are determined and outputted values are given in corresponding physical units.
+The module NBody.py takes the same inputs as TIRO.py and converts outputs into N-Body (Hénon) units. The module Physical_Units.py takes two additional inputs from: central density (in $M_\odot/pc^3$), central velocity dispersion (in $km/s$) and total mass (in $M_\odot$); outputted values are given in physical units.
