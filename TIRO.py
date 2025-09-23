@@ -1,4 +1,5 @@
 import sys
+import argparse
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.optimize import brentq, fsolve
@@ -160,18 +161,16 @@ if __name__ == "__main__":
 
     """ Parameters """
 
-    args = sys.argv
-    if (len(args) != 5):
-        print("Required arguments: concentration tidal_strength asynchronicity galaxy_coefficient")
-        sys.exit(1)
-    psi = float(args[1]) #concentration
-    epsilon = float(args[2]) #tidal strength parameter
-    zeta = float(args[3]) #asynchronicity parameter
-    nu = float(args[4]) #galactic potential coefficient
+    parser = argparse.ArgumentParser()
+    parser.add_argument("psi",help="concentration",type=float)
+    parser.add_argument("epsilon",help="tidal strength parameter",type=float)
+    parser.add_argument("zeta",help="asynchronicity aprameter",type=float)
+    parser.add_argument("nu",help="galactic potential coefficient",type=float)
+    args = parser.parse_args()
 
     """ Run Poisson Solver """
 
-    model = Model([psi,epsilon,zeta,nu])
+    model = Model([args.psi,args.epsilon,args.zeta,args.nu])
     model.integrate()
     r_tidal = model.tidal_radius()
 
