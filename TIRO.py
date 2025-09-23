@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-import scipy as sp
 from scipy.integrate import solve_ivp
 from scipy.optimize import brentq, fsolve
 from scipy.special import gammainc, gamma
@@ -163,7 +162,7 @@ if __name__ == "__main__":
 
     args = sys.argv
     if (len(args) != 5):
-        print("Usage python TIRO.py concentration tidal_strength asynchronicity galaxy_coefficient")
+        print("Required arguments: concentration tidal_strength asynchronicity galaxy_coefficient")
         sys.exit(1)
     psi = float(args[1]) #concentration
     epsilon = float(args[2]) #tidal strength parameter
