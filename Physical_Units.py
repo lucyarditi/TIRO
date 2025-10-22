@@ -21,7 +21,7 @@ def mass_integrand(r,theta,phi):
     return model.density(model.global_solution(r,theta,phi))*(r**2)*np.sin(theta)
 
 def total_mass(r_tidal):
-    return tplquad(mass_integrand,10**-6,r_tidal,0,np.pi,0,2*np.pi)
+    return tplquad(mass_integrand,0,2*np.pi,0,np.pi,10**-6,r_tidal)
 
 def rescaled_density(rho,A):
     return rho*A

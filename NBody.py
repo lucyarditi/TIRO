@@ -13,10 +13,10 @@ def kinetic_integrand(r,theta,phi):
     return model.velocity_dispersion(model.global_solution(r,theta,phi))*(r**2)*np.sin(theta)
 
 def total_mass(r_tidal):
-    return tplquad(mass_integrand,10**-6,r_tidal,0,np.pi,0,2*np.pi)
+    return tplquad(mass_integrand,0,2*np.pi,0,np.pi,10**-6,r_tidal)
 
 def kinetic_energy(r_tidal):
-    return tplquad(kinetic_integrand,10**-6,r_tidal,0,np.pi,0,2*np.pi)
+    return tplquad(kinetic_integrand,0,2*np.pi,0,np.pi,10**-6,r_tidal)
 
 def king_radius(M,K):
     return np.sqrt(9*M/(16*np.pi*model.density(model.param[0])*K))
