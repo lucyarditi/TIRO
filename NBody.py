@@ -7,25 +7,48 @@ from matplotlib.ticker import MultipleLocator
 from TIRO import Model
 
 def mass_integrand(r,theta,phi):
-    return model.density(model.global_solution(r,theta,phi))*(r**2)*np.sin(theta)
+    return model.density(model.global_solution(r,theta,phi))*np.square(r)*np.sin(theta)
 
-def kinetic_integrand(r,theta,phi):
-    return model.velocity_dispersion(model.global_solution(r,theta,phi))*(r**2)*np.sin(theta)
-
+def kinetic_integrand(r,theta,phi,omega_squared):
+    psi = model.global_solution(r,theta,phi)
+    dispersion = np.where(psi>=0,model.velocity_dispersion(psi),0)
+    return model.density(psi) * (3*np.square(dispersion) + (9/(4*np.pi))*np.square(r*np.sin(theta))*omega_squared) * np.square(r)*np.sin(theta)
+    
 def total_mass(r_tidal):
-    return tplquad(mass_integrand,0,2*np.pi,0,np.pi,10**-6,r_tidal)
+    return 8*tplquad(mass_integrand,0,0.5*np.pi,0,0.5*np.pi,0,r_tidal)[0]
 
 def kinetic_energy(r_tidal):
-    return tplquad(kinetic_integrand,0,2*np.pi,0,np.pi,10**-6,r_tidal)
+    omega_squared = 4*np.pi*(model.param[2]+1)*model.param[1]
+    return 4*tplquad(kinetic_integrand,0,np.pi/2,0,np.pi/2,0,r_tidal,args=([omega_squared]))[0]
 
-def king_radius(M,K):
-    return np.sqrt(9*M/(16*np.pi*model.density(model.param[0])*K))
+def corotating_kinetic_integrand(r,theta,phi):
+    psi = model.global_solution(r,theta,phi)
+    dispersion = np.where(psi>=0,model.velocity_dispersion(psi),0)
+    return model.density(psi)*np.square(dispersion)*np.square(r)*np.sin(theta)
 
-def little_a(r0,K):
-    return 4*K*(r0**3)
+def corotating_kinetic_energy(r_tidal):
+    return 12*tplquad(corotating_kinetic_integrand,0,np.pi/2,0,np.pi/2,0,r_tidal)[0]
+    
+def potential_integrand(r,theta,phi):
+    psi = model.global_solution(r,theta,phi)
+    omega_diff = -4*np.pi*model.param[2]*model.param[1]
+    big_omega = 4*np.pi*model.param[1]
+    a_pert = (9/(8*np.pi)) * ((omega_diff*np.square(r*np.sin(theta))) + big_omega*(np.square(r*np.cos(theta))-(model.param[3]*np.square(r*np.sin(theta)*np.cos(phi)))))
+    constants = model.constants()
+    alpha = constants[2] + constants[4]*model.param[1]
+    return model.density(psi)*(a_pert+alpha-psi)*np.square(r)*np.sin(theta)
+
+def total_potential(r_tidal):
+    return 4*tplquad(potential_integrand,0,np.pi/2,0,np.pi/2,0,r_tidal)[0]
+
+def little_a(M,K):
+    return 4*K/M
+
+def king_radius(a,M):
+    return (4*np.pi*a*model.density(model.param[0]))/(9*M)
 
 def big_a(r0,M):
-    return 1/(M*(r0**3))
+    return 1/(M*np.power(r0,3))
 
 def rescaled_density(rho,A):
     return rho*A
@@ -51,25 +74,29 @@ if __name__ == "__main__":
 
     model = Model([args.psi,args.epsilon,args.zeta,args.nu])
     model.integrate()
-    r_tidal = model.tidal_radius()
+    model.r_tidal = model.tidal_radius()
 
     """ Convert to N-Body units """
 
-    M = total_mass(r_tidal)[0]
-    K = kinetic_energy(r_tidal)[0]
+    M = total_mass(model.r_tidal)
+    K = kinetic_energy(model.r_tidal)
 
-    r0 = king_radius(M,K)
-    a = little_a(r0,K)
+    a = little_a(M,K)
+    r0 = king_radius(a,M)
     A = big_a(r0,M)
 
+    T = corotating_kinetic_energy(model.r_tidal)
+    P = total_potential(model.r_tidal)
+    print(f'Q: {T/-P}')
+
     print("The truncation radius is " + str(np.round(rescaled_length(model.r_trunc,r0),decimals=2)))
-    print("The tidal radius is " + str(np.round(rescaled_length(r_tidal,r0),decimals=2)))
+    print("The tidal radius is " + str(np.round(rescaled_length(model.r_tidal,r0),decimals=2)))
     print("The central density is " + str(np.round(rescaled_density(model.density(model.param[0]),A),decimals=2)))
     print("The central velocity dispersion is " + str(np.round(rescaled_velocity_dispersion(model.velocity_dispersion(model.param[0]),a),decimals=2)))
 
     """ Plotting """
 
-    r = np.linspace(0,r_tidal,100000)[1:]
+    r = np.linspace(0,model.r_tidal,100000)[1:]
 
     potential_x = model.global_solution(r,np.pi/2,0)
     potential_y = model.global_solution(r,np.pi/2,np.pi/2)
@@ -159,7 +186,7 @@ if __name__ == "__main__":
     # plots slices through equipotentials
 
     potentials = np.array([0.0025,0.0125,0.025,0.05,0.125,0.25,0.5,0.75])*model.param[0]
-    critical_potential = model.global_solution(r_tidal,np.pi/2,0) #critical surface
+    critical_potential = model.global_solution(model.r_tidal,np.pi/2,0) #critical surface
     
     thetas = np.linspace(0,np.pi,1000)
     phis = np.linspace(0,2*np.pi,2000)
@@ -168,7 +195,7 @@ if __name__ == "__main__":
     radii_xy = np.zeros((len(phis),len(potentials)+1))
     for i,p in enumerate(potentials):
         radii_xy[0,i] = brentq(model.equipotential,10**-6,boundary_xy[0],args=(np.pi/2,phis[0],p))
-    radii_xy[0,-1] = brentq(model.equipotential,boundary_xy[0],r_tidal,args=(np.pi/2,phis[0],critical_potential))
+    radii_xy[0,-1] = brentq(model.equipotential,boundary_xy[0],model.r_tidal,args=(np.pi/2,phis[0],critical_potential))
     for j,ph in enumerate(phis[1:]):
         for i,p in enumerate(potentials):
             radii_xy[j+1,i] = fsolve(model.equipotential,radii_xy[j,i],args=(np.pi/2,ph,p))[0]
@@ -180,7 +207,7 @@ if __name__ == "__main__":
     radii_xz = np.zeros((len(theta_input),len(potentials)+1))
     for i,p in enumerate(potentials):
         radii_xz[0,i] = brentq(model.equipotential,10**-6,boundary_xz[0],args=(theta_input[0],0,p))
-    radii_xz[0,-1] = brentq(model.equipotential,boundary_xz[0],r_tidal,args=(theta_input[0],0,critical_potential))
+    radii_xz[0,-1] = brentq(model.equipotential,boundary_xz[0],model.r_tidal,args=(theta_input[0],0,critical_potential))
     for j,t in enumerate(theta_input[1:]):
         for i,p in enumerate(potentials):
             radii_xz[j+1,i] = fsolve(model.equipotential,radii_xz[j,i],args=(t,phi_input[j+1],p))[0]
@@ -191,14 +218,14 @@ if __name__ == "__main__":
     radii_yz = np.zeros((len(theta_input),len(potentials)+1))
     for i,p in enumerate(potentials):
         radii_yz[0,i] = brentq(model.equipotential,10**-6,boundary_yz[0],args=(theta_input[0],np.pi/2,p))
-    radii_yz[0,-1] = brentq(model.equipotential,boundary_yz[0],r_tidal,args=(theta_input[0],np.pi/2,critical_potential))
+    radii_yz[0,-1] = brentq(model.equipotential,boundary_yz[0],model.r_tidal,args=(theta_input[0],np.pi/2,critical_potential))
     for j,t in enumerate(theta_input[1:]):
         for i,p in enumerate(potentials):
             radii_yz[j+1,i] = fsolve(model.equipotential,radii_yz[j,i],args=(t,phi_input_y[j+1],p))[0]
         radii_yz[j+1,-1] = fsolve(model.equipotential,radii_yz[j,-1],args=(t,phi_input_y[j+1],critical_potential))[0]
 
     fig, axes = plt.subplots(1,3,figsize=(15, 5))
-    axes_lim = rescaled_length(np.ceil(r_tidal+0.5),r0)
+    axes_lim = rescaled_length(np.ceil(model.r_tidal+0.5),r0)
     if axes_lim < 1.4:
         major_locator = 0.2
     elif axes_lim < 3:
@@ -216,7 +243,7 @@ if __name__ == "__main__":
     axes[0].plot(x_boundary,y_boundary,'k')
     for i in range(len(potentials)):
         axes[0].plot(x[:,i],y[:,i],'k')
-    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(model.r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[0].plot(x[:,-1],y[:,-1],'k:',dashes=[1,1.7])
 
     axes[0].set_ylabel(r'$y$',labelpad = 4,fontsize = 'x-large',rotation=0)
@@ -257,7 +284,7 @@ if __name__ == "__main__":
     axes[1].plot(x_boundary,z_boundary,'k')
     for i in range(len(potentials)):
         axes[1].plot(x[:,i],z[:,i],'k')
-    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(model.r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[1].plot(x[:,-1],z[:,-1],'k:',dashes=[1,1.7])
 
     axes[1].set_ylabel(r'$z$',labelpad = 4,fontsize = 'x-large',rotation=0)
@@ -298,7 +325,7 @@ if __name__ == "__main__":
     axes[2].plot(y_boundary,z_boundary,'k')
     for i in range(len(potentials)):
         axes[2].plot(y[:,i],z[:,i],'k')
-    if (rescaled_length(r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
+    if (rescaled_length(model.r_tidal,r0)-np.max(x_boundary))/axes_lim > 0.02:
         axes[2].plot(y[:,-1],z[:,-1],'k:',dashes=[1,1.7])
     
     axes[2].set_ylabel(r'$z$',labelpad = 4,fontsize = 'x-large',rotation=0)
