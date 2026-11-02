@@ -1,5 +1,6 @@
 import argparse
 import numpy as np
+from numpy.polynomial import chebyshev
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from scipy.integrate import solve_ivp
@@ -20,18 +21,18 @@ class Model:
         self.y0[1] = -3 * self.range[0]                                                   # ψ0'(0)
         self.y0[2] = -1.5 * (1-self.param[3]-2*self.param[2]) * np.square(self.range[0])  # f00(0)
         self.y0[3] = -3 * (1-self.param[3]-2*self.param[2]) * self.range[0]               # f00'(0)
-        self.y0[4] = np.square(self.range[0])                                             # γ2(0)
-        self.y0[5] = 2 * self.range[0]                                                    # γ2'(0)
+        self.y0[4] = 1 - self.r_one(self.param[0])*np.square(self.range[0])/14            # γ2/r^2 at r=0
+        self.y0[5] = -self.r_one(self.param[0])*self.range[0]/7                           # d(γ2/r^2)/dr at r=0
 
     def poisson(self, r, y):
         """Generate Poisson equation: system of 6 first order 0DEs dy/dr=f(r,y)."""
-        ode = np.zeros(6) # y=[ψ0,u,f00,g,γ2,v] and ode = [dψ0/dr,du/dr,df00/dr,dg/dr,dγ2/dr,dv/dr]
+        ode = np.zeros(6) # y=[ψ0,u,f00,g,γ2/r^2,w=d(γ2/r^2)/dr] and ode = [dψ0/dr,du/dr,df00/dr,dg/dr,d(γ2/r^2)/dr,dw/dr]
         ode[0] = y[1]     
         ode[1] = -2*y[1]/r + -9*np.exp(y[0])*self.gamma(5/2,y[0])/(np.exp(self.param[0])*self.gamma(5/2,self.param[0]))
         ode[2] = y[3]
         ode[3] = -2*y[3]/r - self.r_one(y[0])*y[2] - 9*(1-self.param[3]-2*self.param[2])
         ode[4] = y[5]
-        ode[5] = -2*y[5]/r + 6*y[4]/np.square(r) - self.r_one(y[0])*y[4]
+        ode[5] = -6*y[5]/r - self.r_one(y[0])*y[4]
         return ode
 
     def gamma(self, a, psi):
@@ -49,6 +50,7 @@ class Model:
     def integrate(self):
         """Integrate ODEs in self.poisson."""
         def truncation_radius(t,y): return y[0]   # finds truncation radius (r at which ψ0=0)
+        truncation_radius.terminal = True
         self.sol = solve_ivp(self.poisson,
                              self.range,
                              self.y0,
@@ -59,11 +61,12 @@ class Model:
                              max_step=0.05)
         self.r_trunc = self.sol.t_events[0][0]
         self.const = self.constants()
+        self.test()
     
     def internal_solution(self, r, theta, phi):
         """Construct the internal solution."""
         Y = self.spherical_harmonics(theta,phi)
-        internal = self.sol.sol(r)[0] + (self.sol.sol(r)[2]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*self.sol.sol(r)[4])*self.param[1]
+        internal = self.sol.sol(r)[0] + (self.sol.sol(r)[2]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*np.square(r)*self.sol.sol(r)[4])*self.param[1]
         return internal
     
     def external_solution(self, r, theta, phi):
@@ -85,10 +88,12 @@ class Model:
         """Evaluate constants in internal and external solutions."""
         T = self.tidal_harmonics(self.r_trunc)
         C = self.rotational_harmonics(self.r_trunc)
+        gamma2 = np.square(self.r_trunc)*self.sol.y_events[0][0][4]
+        w = 2*self.r_trunc*self.sol.y_events[0][0][4] + np.square(self.r_trunc)*self.sol.y_events[0][0][5]
         
         A = np.zeros(2)
-        A[0] = -5 * (T[1]+self.param[2]*C[1]) / (self.sol.y_events[0][0][5]*self.r_trunc+3*self.sol.y_events[0][0][4])
-        A[1] = -5 * T[2] / (self.sol.y_events[0][0][5]*self.r_trunc+3*self.sol.y_events[0][0][4])
+        A[0] = -5 * (T[1]+self.param[2]*C[1]) / (w*self.r_trunc+3*gamma2)
+        A[1] = -5 * T[2] / (w*self.r_trunc+3*gamma2)
         
         lambda_zero = np.square(self.r_trunc) * self.sol.y_events[0][0][1]
         alpha_zero = lambda_zero / self.r_trunc
@@ -96,8 +101,8 @@ class Model:
         alpha_one = self.sol.y_events[0][0][2] + self.sol.y_events[0][0][3]*self.r_trunc + 3*(T[0]+self.param[2]*C[0])/(2*np.sqrt(np.pi))
         
         a = np.zeros(2)
-        a[0] = -np.power(self.r_trunc,3) * (A[0]*self.sol.y_events[0][0][4]+T[1]+self.param[2]*C[1])
-        a[1] = -np.power(self.r_trunc,3) * (A[1]*self.sol.y_events[0][0][4]+T[2])
+        a[0] = -np.power(self.r_trunc,3) * (A[0]*gamma2+T[1]+self.param[2]*C[1])
+        a[1] = -np.power(self.r_trunc,3) * (A[1]*gamma2+T[2])
 
         return A, lambda_zero, alpha_zero, lambda_one, alpha_one, a
     
@@ -149,6 +154,16 @@ class Model:
     def velocity_dispersion(self, potential):
         """Return the velocity dispersion for a given potential."""
         return np.sqrt(0.4*self.gamma(7/2,potential)/self.gamma(5/2,potential))
+    
+    def test(self):
+        gamma2 = np.square(self.r_trunc)*self.sol.y_events[0][0][4]
+        w = 2*self.r_trunc*self.sol.y_events[0][0][4] + np.square(self.r_trunc)*self.sol.y_events[0][0][5]
+        assert gamma2 > 0, "γ₂(r_tr) must be positive"
+        assert w*self.r_trunc + 3*gamma2 > 0, "Denominator of A₂₀ must be positive"
+        print(self.r_trunc)
+        print(gamma2)
+        print(w)
+        print(self.const[0])
 
 if __name__ == "__main__":
 
@@ -169,6 +184,7 @@ if __name__ == "__main__":
 
     print(f"The truncation radius is {np.round(model.r_trunc,decimals=7)}")
     print(f"The tidal radius is {np.round(r_tidal,decimals=7)}")
+
     
     """ Plotting """
 
