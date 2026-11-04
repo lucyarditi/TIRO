@@ -41,70 +41,123 @@ class Model:
 
     def r_one(self, psi_zero):
         """Evaluate R1."""
-        if psi_zero >=0: 
-            r_one = 9 * (np.exp(psi_zero)*self.gamma(5/2,psi_zero)+np.power(psi_zero,3/2)) / (np.exp(self.param[0])*self.gamma(5/2,self.param[0]))
-        else:
-            r_one = 0
-        return r_one
+        if psi_zero >=0:
+            return 9 * (self.density(psi_zero)+np.power(psi_zero,3/2)) / self.density(self.param[0])
+        else: 
+            return 0
 
     def integrate(self):
         """Integrate ODEs in self.poisson."""
         def truncation_radius(t,y): return y[0]   # finds truncation radius (r at which ψ0=0)
         truncation_radius.terminal = True
-        self.sol = solve_ivp(self.poisson,
+        sol = solve_ivp(self.poisson,
                              self.range,
                              self.y0,
                              method = "DOP853",
                              events=(truncation_radius), 
                              dense_output=True,
-                             rtol=1e-12, atol=1e-14,
-                             max_step=0.05)
-        self.r_trunc = self.sol.t_events[0][0]
-        self.const = self.constants()
-        self.test()
-    
-    def internal_solution(self, r, theta, phi):
-        """Construct the internal solution."""
-        Y = self.spherical_harmonics(theta,phi)
-        internal = self.sol.sol(r)[0] + (self.sol.sol(r)[2]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*np.square(r)*self.sol.sol(r)[4])*self.param[1]
-        return internal
-    
-    def external_solution(self, r, theta, phi):
-        """Construct the external solution """
-        Y = self.spherical_harmonics(theta,phi)
-        T = self.tidal_harmonics(r)
-        C = self.rotational_harmonics(r)
-        external_zero = self.const[2] - self.const[1]/r
-        external_one = (self.const[4] - self.const[3]/r - (T[0]+self.param[2]*C[0])/(2*np.sqrt(np.pi)) 
-                        - (self.const[5][0]/np.power(r,3)+T[1]+self.param[2]*C[1])*Y[0] - (self.const[5][1]/np.power(r,3)+T[2])*Y[1])
-        external = external_zero + external_one*self.param[1]
-        return external
-    
-    def global_solution(self, r, theta, phi):
-        """Patch together the internal and external solutions."""
-        return np.where(r <= self.r_trunc, self.internal_solution(r,theta,phi), self.external_solution(r,theta,phi))
+                             rtol=1e-12, atol=1e-14)
+        self.r_trunc = sol.t_events[0][0]
 
+        # Fit Chebyshev series to solution and take derivatives.
+        N = 100
+        k = np.arange(N+1)
+        ts = np.cos(np.pi*(k+0.5)/(N+1))  #Chebyshev nodes
+        rs = (ts+1) * self.r_trunc / 2
+        ys = sol.sol(rs)[[0,2,4]].T
+        self.c = chebyshev.chebfit(ts, ys, N)
+        self.d = chebyshev.chebder(self.c, scl=2/self.r_trunc)
+        self.dd = chebyshev.chebder(self.d, scl=2/self.r_trunc)
+        
+        self.const = self.constants()
+
+    def psi(self,r): return chebyshev.chebval(2*r/self.r_trunc-1,self.c)
+    def dpsi(self,r): return chebyshev.chebval(2*r/self.r_trunc-1,self.d)
+    def ddpsi(self,r): return chebyshev.chebval(2*r/self.r_trunc-1,self.dd)
+
+    def internal_potential(self, r, theta, phi):
+        """Construct the internal potential."""
+        Y = self.spherical_harmonics(theta,phi)
+        return self.psi(r)[0] + (self.psi(r)[1]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*np.square(r)*self.psi(r)[2])*self.param[1]
+    
+    def internal_dr(self, r, theta, phi):
+        """Construct the radial derivative of the internal potential."""
+        Y = self.spherical_harmonics(theta,phi)
+        w = 2*r*self.psi(r)[2] + np.square(r)*self.dpsi(r)[2]
+        return self.dpsi(r)[0] + (self.dpsi(r)[1]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*w)*self.param[1]
+    
+    def internal_ddr(self, r, theta, phi):
+        """Construct the second radial derivative of the internal potential."""
+        Y = self.spherical_harmonics(theta,phi)
+        dw = 2*self.psi(r)[2] + 4*r*self.dpsi(r)[2] + np.square(r)*self.ddpsi(r)[2]
+        return self.ddpsi(r)[0] + (self.ddpsi(r)[1]+(self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*dw)*self.param[1]
+    
     def constants(self):
         """Evaluate constants in internal and external solutions."""
         T = self.tidal_harmonics(self.r_trunc)
         C = self.rotational_harmonics(self.r_trunc)
-        gamma2 = np.square(self.r_trunc)*self.sol.y_events[0][0][4]
-        w = 2*self.r_trunc*self.sol.y_events[0][0][4] + np.square(self.r_trunc)*self.sol.y_events[0][0][5]
+
+        psi_tr = self.psi(self.r_trunc)    #potential at r_trunc
+        dpsi_tr = self.dpsi(self.r_trunc)  #potential gradient at r_trunc
+        gamma2 = np.square(self.r_trunc)*psi_tr[2]
+        w = 2*self.r_trunc*psi_tr[2] + np.square(self.r_trunc)*dpsi_tr[2]
         
         A = np.zeros(2)
         A[0] = -5 * (T[1]+self.param[2]*C[1]) / (w*self.r_trunc+3*gamma2)
         A[1] = -5 * T[2] / (w*self.r_trunc+3*gamma2)
         
-        lambda_zero = np.square(self.r_trunc) * self.sol.y_events[0][0][1]
+        lambda_zero = np.square(self.r_trunc) * dpsi_tr[0]
         alpha_zero = lambda_zero / self.r_trunc
-        lambda_one = self.sol.y_events[0][0][3]*np.square(self.r_trunc) + (T[0]+self.param[2]*C[0])*self.r_trunc/np.sqrt(np.pi)
-        alpha_one = self.sol.y_events[0][0][2] + self.sol.y_events[0][0][3]*self.r_trunc + 3*(T[0]+self.param[2]*C[0])/(2*np.sqrt(np.pi))
+        lambda_one = dpsi_tr[1]*np.square(self.r_trunc) + (T[0]+self.param[2]*C[0])*self.r_trunc/np.sqrt(np.pi)
+        alpha_one = psi_tr[1] + dpsi_tr[1]*self.r_trunc + 3*(T[0]+self.param[2]*C[0])/(2*np.sqrt(np.pi))
         
         a = np.zeros(2)
         a[0] = -np.power(self.r_trunc,3) * (A[0]*gamma2+T[1]+self.param[2]*C[1])
         a[1] = -np.power(self.r_trunc,3) * (A[1]*gamma2+T[2])
 
         return A, lambda_zero, alpha_zero, lambda_one, alpha_one, a
+    
+    def external_potential(self, r, theta, phi):
+        """Construct the external solution."""
+        Y = self.spherical_harmonics(theta,phi)
+        T = self.tidal_harmonics(r)
+        C = self.rotational_harmonics(r)
+        psi0 = self.const[2] - self.const[1]/r
+        psi1 = (self.const[4] - self.const[3]/r - (T[0]+self.param[2]*C[0])/(2*np.sqrt(np.pi)) 
+                        - (self.const[5][0]/np.power(r,3)+T[1]+self.param[2]*C[1])*Y[0] - (self.const[5][1]/np.power(r,3)+T[2])*Y[1])
+        return psi0 + psi1*self.param[1]
+    
+    def external_dr(self, r, theta, phi):
+        """ constructs the radial derivative of the external solution """
+        Y = self.spherical_harmonics(theta,phi)
+        T = self.tidal_harmonics(r)
+        C = self.rotational_harmonics(r)
+        dpsi0 = self.const[1] / np.square(r)
+        dpsi1 = (self.const[3]/np.square(r) - (T[0]+self.param[2]*C[0])/(np.sqrt(np.pi)*r) 
+                        - (-3*self.const[5][0]/np.power(r,4) + 2*(T[1]+self.param[2]*C[1])/r)*Y[0] - (-3*self.const[5][1]/np.power(r,4)+2*T[2]/r)*Y[1])
+        return dpsi0 + dpsi1*self.param[1]
+    
+    def external_ddr(self, r, theta, phi):
+        """ constructs the radial derivative of the external solution """
+        Y = self.spherical_harmonics(theta,phi)
+        T = self.tidal_harmonics(r)
+        C = self.rotational_harmonics(r)
+        ddpsi0 = -2 * self.const[1] / np.power(r,3)
+        ddpsi1 = (-2*self.const[3]/np.power(r,3) - (T[0]+self.param[2]*C[0])/(np.sqrt(np.pi)*np.square(r)) 
+                        - (12*self.const[5][0]/np.power(r,5) + 2*(T[1]+self.param[2]*C[1])/np.square(r))*Y[0] - (12*self.const[5][1]/np.power(r,5)+2*T[2]/r)*Y[1])
+        return ddpsi0 + ddpsi1*self.param[1]
+    
+    def global_potential(self, r, theta, phi):
+        """Patch together the internal and external solutions."""
+        return np.where(r <= self.r_trunc, self.internal_potential(r,theta,phi), self.external_potential(r,theta,phi))
+    
+    def global_derivative(self, r, theta, phi):
+        """Patch together the internal and external solutions."""
+        return np.where(r <= self.r_trunc, self.internal_dr(r,theta,phi), self.external_dr(r,theta,phi))
+    
+    def global_derivative2(self, r, theta, phi):
+        """Patch together the internal and external solutions."""
+        return np.where(r <= self.r_trunc, self.internal_ddr(r,theta,phi), self.external_ddr(r,theta,phi))
     
     def spherical_harmonics(self, theta, phi):
         """Evaluate real spherical harmonics Y20 and Y22."""
@@ -127,25 +180,15 @@ class Model:
 
     def tidal_radius(self):
         """Locate the tidal radius."""
-        return brentq(self.external_gradient, self.r_trunc, self.range[1], args=(np.pi/2,0))
-    
-    def external_gradient(self, r, theta, phi):
-        """ constructs the radial derivative of the external solution """
-        Y = self.spherical_harmonics(theta,phi)
-        T = self.tidal_harmonics(r)
-        C = self.rotational_harmonics(r)
-        gradient_zero = self.const[1] / np.square(r)
-        gradient_one = (self.const[3]/np.square(r) - (T[0]+self.param[2]*C[0])/(np.sqrt(np.pi)*r) 
-                        - (-3*self.const[5][0]/np.power(r,4)+2*T[1]/r+2*self.param[2]*C[1]/r)*Y[0] - (-3*self.const[5][1]/np.power(r,4)+2*T[2]/r)*Y[1])
-        return gradient_zero + gradient_one*self.param[1]
-    
+        return brentq(self.external_dr, self.r_trunc, self.range[1], args=(np.pi/2,0))
+
     def boundary(self, theta, phi):
         """Locate the cluster boundary."""
-        return fsolve(self.global_solution, self.r_trunc, args=(theta,phi))[0]
+        return fsolve(self.global_potential, self.r_trunc, args=(theta,phi))[0]
     
-    def equipotential(self, r, theta, phi, potential):
+    def equipotential(self, r, theta, phi, pot):
         """Locate equipotential surface."""
-        return self.global_solution(r,theta,phi) - potential
+        return self.global_potential(r,theta,phi) - pot
     
     def density(self, potential):
         """Return the density for a given potential."""
@@ -153,17 +196,26 @@ class Model:
     
     def velocity_dispersion(self, potential):
         """Return the velocity dispersion for a given potential."""
-        return np.sqrt(0.4*self.gamma(7/2,potential)/self.gamma(5/2,potential))
+        return np.sqrt(0.4*self.gamma(7/2,potential) / self.gamma(5/2,potential))
     
     def test(self):
-        gamma2 = np.square(self.r_trunc)*self.sol.y_events[0][0][4]
-        w = 2*self.r_trunc*self.sol.y_events[0][0][4] + np.square(self.r_trunc)*self.sol.y_events[0][0][5]
-        assert gamma2 > 0, "γ₂(r_tr) must be positive"
-        assert w*self.r_trunc + 3*gamma2 > 0, "Denominator of A₂₀ must be positive"
-        print(self.r_trunc)
-        print(gamma2)
-        print(w)
-        print(self.const[0])
+        def gamma2(r): return np.square(r)*self.psi(r)[2]
+        def w(r): return 2*r*self.psi(r)[2] + np.square(r)*self.dpsi(r)[2]
+        assert gamma2(self.r_trunc) > 0, "γ₂(r_tr) must be positive"
+        assert w(self.r_trunc)*self.r_trunc + 3*gamma2(self.r_trunc) > 0, "denominator of A₂₀ must be positive"
+        r = np.linspace(1e-3, self.r_trunc, 2000)
+        assert np.all((self.psi(r)[2]>0) & (self.psi(r)[2] <= 1+1e-12)), "γ2/r^2 out of range"
+        assert np.all(np.diff(self.psi(r)[2]) <= 1e-12), "γ2/r^2 not monotonic"
+
+        ddr_jump = self.internal_ddr(self.r_trunc,0,np.pi) - self.external_ddr(self.r_trunc,0,np.pi)
+        print(f"The discontinuity in the second derivative of the potential at the truncation radius is {ddr_jump}.")
+
+        Y = self.spherical_harmonics(0,np.pi/2)
+        T = self.tidal_harmonics(self.r_trunc)
+        C = self.rotational_harmonics(self.r_trunc)
+        l2_interior = (self.const[0][0]*Y[0]+self.const[0][1]*Y[1])*np.square(self.r_trunc)*self.psi(self.r_trunc)[2]
+        l2_exterior = -(self.const[5][0]/np.power(self.r_trunc,3)+T[1]+self.param[2]*C[1])*Y[0] - (self.const[5][1]/np.power(self.r_trunc,3)+T[2])*Y[1]
+        assert np.abs((l2_interior-l2_exterior)/l2_interior) < 10e-10, "disagreement between l=2 interior and exterior terms at r_tr"
 
 if __name__ == "__main__":
 
@@ -184,15 +236,15 @@ if __name__ == "__main__":
 
     print(f"The truncation radius is {np.round(model.r_trunc,decimals=7)}")
     print(f"The tidal radius is {np.round(r_tidal,decimals=7)}")
-
+    model.test()
     
     """ Plotting """
 
     r = np.linspace(0, r_tidal, 100000)[1:]
 
-    potential_x = model.global_solution(r, np.pi/2, 0)
-    potential_y = model.global_solution(r, np.pi/2, np.pi/2)
-    potential_z = model.global_solution(r, 0, 0)
+    potential_x = model.global_potential(r, np.pi/2, 0)
+    potential_y = model.global_potential(r, np.pi/2, np.pi/2)
+    potential_z = model.global_potential(r, 0, 0)
 
     density_x = model.density(potential_x)
     density_y = model.density(potential_y)
@@ -203,7 +255,7 @@ if __name__ == "__main__":
     dispersion_z = model.velocity_dispersion(potential_z)
     
     r_k = np.linspace(0, model.r_trunc, 10000)[1:]
-    potential_k = model.sol.sol(r_k)[0]  # King model potential
+    potential_k = model.psi(r_k)[0]  # King model potential
     density_k = model.density(potential_k)
     dispersion_k = model.velocity_dispersion(potential_k)
 
@@ -276,7 +328,7 @@ if __name__ == "__main__":
     # Plotting equipotential slices.
 
     potentials = np.array([0.0025,0.0125,0.025,0.05,0.125,0.25,0.5,0.75])*model.param[0]
-    critical_potential = model.global_solution(r_tidal, np.pi/2, 0)      # Critical surface
+    critical_potential = model.global_potential(r_tidal, np.pi/2, 0)      # Critical surface
     
     thetas = np.linspace(0, np.pi, 1000)
     phis = np.linspace(0, 2*np.pi, 2000)
