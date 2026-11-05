@@ -1,6 +1,8 @@
 import argparse
 import numpy as np
+import sigfig
 from scipy.optimize import fsolve
+
 from TIRO import Model
 
 def equations(u, psi, zeta, nu):    
@@ -31,6 +33,6 @@ if __name__ == "__main__":
     r_tidal_estimate = 15
     r_t, epsilon_crit = fsolve(equations, (r_tidal_estimate,epsilon_estimate), args=(args.psi,args.zeta,args.nu))
    
-    dp = 10                                                  #Round to a minimum of 10 decimal places.
-    while np.round(epsilon_crit,dp) > epsilon_crit: dp += 1  #Increase number of decimal places if rounding exceeds criticality.
-    print(f"The critical tidal strength parameter (to first order) is {np.round(epsilon_crit,dp)}")
+    sf = 6                                                               #Round to a minimum of 6 significant figures.
+    while sigfig.round(epsilon_crit,sigfigs=sf) > epsilon_crit: sf += 1  #Increase number of significant figures if rounding exceeds criticality.
+    print(f"The critical tidal strength parameter (to first order) is {"{:e}".format(sigfig.round(epsilon_crit,sigfigs=sf))}")
